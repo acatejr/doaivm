@@ -1,0 +1,30 @@
+# Copy this file to terraform.tfvars and fill in your own values.
+# terraform.tfvars is gitignored -- never commit it, it holds your API token.
+
+# do_token: leave this OUT of terraform.tfvars if you're supplying the token
+# via a .env file / TF_VAR_do_token (see .env.example and scripts/load-env.sh)
+# -- a value set here would take priority over the environment variable and
+# silently win. Only uncomment this if you're NOT using .env:
+# do_token = "dop_v1_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+
+# ssh_allowed_ips: leave this commented out if you're on a laptop that
+# roams between networks (home, cafe, hotspot) -- scripts/up.sh, down.sh,
+# and allow-my-ip.sh all auto-detect your CURRENT public IP and authorize
+# it fresh on every run, so you never get locked out by a stale CIDR here.
+# A value set in this file takes priority over that auto-detection and
+# silently overrides it, so only uncomment this if you specifically want a
+# fixed allowlist (e.g. a static-IP office network, or several locations
+# you always work from) instead of automatic per-run detection:
+# ssh_allowed_ips = ["203.0.113.42/32"]
+
+# Optional: only set this if you want to hit the Ollama API directly from
+# your machine instead of via the SSH tunnel shown in `terraform output`.
+# ollama_allowed_ips = ["203.0.113.42/32"]
+
+# Defaults below match the 8GB/4vCPU Basic Droplet + Qwen2.5-Coder 7B setup;
+# override only if you want a different size/region/model.
+# region       = "nyc3"
+# droplet_size = "s-4vcpu-8gb"
+# model_name   = "qwen2.5-coder:7b"

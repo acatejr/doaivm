@@ -1,11 +1,20 @@
-# GPU Root Module — RTX 4000 Ada (20GB VRAM)
+# GPU Root Module — RTX 4000 Ada (20GB VRAM, currently falls back to 48GB)
 
 Provisions a DigitalOcean GPU droplet running Ollama with `qwen2.5-coder:14b`, private
 only (Ollama bound to loopback, reached via SSH tunnel). See
 [../digitalocean-gpu-rtx4000ada-20gb-vm-plan.md](../digitalocean-gpu-rtx4000ada-20gb-vm-plan.md)
 for full design rationale, including why this tier uses a smaller/differently-shaped
-model than the L40S/RTX 6000 Ada plan. Estimated cost: **~$18.40/day** if left running
-continuously — see [../cost_estimates.md](../cost_estimates.md).
+model than the L40S/RTX 6000 Ada plan.
+
+**Current status**: RTX 4000 Ada (`gpu-4000adax1-20gb`, this module's original design
+target) is confirmed via the live DigitalOcean sizes/regions APIs to have zero
+available regions right now — not orderable anywhere on this account. `droplet_size`
+falls back to `gpu-6000adax1-48gb` (48GB VRAM, the same tier `../gpu-qwen3-30b` uses)
+so this module stays usable; `qwen2.5-coder:14b` still runs fine there, just with far
+more VRAM headroom than the original 20GB design intended. Estimated cost with the
+fallback: **~$37.84/day** (roughly double the original ~$18.40/day estimate) if left
+running continuously — see [../cost_estimates.md](../cost_estimates.md). Re-check RTX
+4000 Ada availability periodically and switch `droplet_size` back if it returns.
 
 ## Prerequisites
 
@@ -55,8 +64,8 @@ curl http://localhost:11434/api/generate -d '{"model":"qwen2.5-coder:14b","promp
 ```
 
 After first boot, confirm the model is fully on-GPU: `nvidia-smi` should show
-~10-11GB used (not the full 20GB), and generation latency should be GPU-class, not
-CPU-offloaded.
+~10-11GB used out of the 48GB available on the current fallback tier (well under
+capacity), and generation latency should be GPU-class, not CPU-offloaded.
 
 ## Teardown
 

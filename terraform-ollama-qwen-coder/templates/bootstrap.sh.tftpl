@@ -1,0 +1,90 @@
+#!/bin/bash
+# Bootstraps Ollama on first boot: mounts the persistent model volume,
+# installs Ollama, points it at that volume, and pulls ${model_name}.
+set -euo pipefail
+exec > >(tee -a /var/log/ollama-bootstrap.log) 2>&1
+
+# This runs as a raw user_data script via cloud-init with no $HOME set, and
+# the ollama CLI panics ("$HOME is not defined") during its own init if it's
+# missing -- only affects the client invocations below (ollama pull), not the
+# systemd service itself (which gets its environment from the unit file).
+export HOME=/root
+
+echo "=== $(date -Is) Bootstrapping Ollama + ${model_name} ==="
+
+# --- Locate the attached DigitalOcean volume (retry: attachment can lag boot) ---
+VOLUME_DEVICE=""
+for i in $(seq 1 30); do
+  VOLUME_DEVICE=$(readlink -f /dev/disk/by-id/scsi-0DO_Volume_* 2>/dev/null || true)
+  if [ -n "$VOLUME_DEVICE" ] && [ -b "$VOLUME_DEVICE" ]; then
+    break
+  fi
+  VOLUME_DEVICE=""
+  sleep 2
+done
+
+if [ -z "$VOLUME_DEVICE" ]; then
+  echo "ERROR: could not find the attached model volume after 60s" >&2
+  exit 1
+fi
+
+echo "Found volume device: $VOLUME_DEVICE"
+
+MOUNT_POINT=/mnt/ollama_models
+mkdir -p "$MOUNT_POINT"
+
+# Format only if it has no filesystem yet (safe to re-run across boots/recreates)
+if ! blkid "$VOLUME_DEVICE" >/dev/null 2>&1; then
+  echo "Volume is unformatted, creating ext4 filesystem..."
+  mkfs.ext4 -F "$VOLUME_DEVICE"
+fi
+
+UUID=$(blkid -s UUID -o value "$VOLUME_DEVICE")
+if ! grep -q "$UUID" /etc/fstab; then
+  echo "UUID=$UUID $MOUNT_POINT ext4 defaults,nofail,discard 0 2" >> /etc/fstab
+fi
+mount -a
+
+mkdir -p "$MOUNT_POINT/ollama"
+
+# --- Install Ollama (idempotent: safe to re-run) ---
+if ! command -v ollama >/dev/null 2>&1; then
+  echo "Installing Ollama..."
+  curl -fsSL https://ollama.com/install.sh | sh
+fi
+
+# The installer above creates an unprivileged "ollama" system user and a
+# systemd unit that runs the daemon as that user (User=ollama Group=ollama).
+# The model directory was created by root above; hand it to that user now
+# that it exists, or the service fails to initialize its model store and
+# crash-loops under Restart=always.
+chown -R ollama:ollama "$MOUNT_POINT/ollama"
+
+# --- Point Ollama's model storage at the persistent volume ---
+# OLLAMA_HOST binds on all interfaces; the DigitalOcean firewall resource
+# (not this script) is what actually decides who can reach port 11434.
+mkdir -p /etc/systemd/system/ollama.service.d
+cat > /etc/systemd/system/ollama.service.d/override.conf <<EOF
+[Service]
+Environment="OLLAMA_MODELS=$MOUNT_POINT/ollama"
+Environment="OLLAMA_HOST=0.0.0.0:11434"
+EOF
+
+systemctl daemon-reload
+systemctl enable ollama
+systemctl restart ollama
+
+# --- Wait for the API, then pull the model (no-op if already cached on the volume) ---
+echo "Waiting for Ollama API..."
+for i in $(seq 1 30); do
+  if curl -fsS http://127.0.0.1:11434/ >/dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+done
+
+echo "Pulling ${model_name} (skips download if already present on the volume)..."
+ollama pull "${model_name}"
+
+echo "=== $(date -Is) Bootstrap complete: ${model_name} is ready ==="
+touch /var/lib/ollama-bootstrap-complete

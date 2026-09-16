@@ -20,11 +20,16 @@ Companion plan docs live alongside them:
   — CPU-Optimized 32GB/16vCPU (no GPU), `qwen3-coder:30b`. Cheaper ($12/day) and
   slower alternative to `gpu-qwen3-30b/`.
 - `gpu-rtx4000/` ([digitalocean-gpu-rtx4000ada-20gb-vm-plan.md](./digitalocean-gpu-rtx4000ada-20gb-vm-plan.md))
-  — RTX 4000 Ada, 20GB VRAM, TOR1, `qwen2.5-coder:14b` (right-sized for this smaller
-  card). ~$18.40/day.
+  — designed for RTX 4000 Ada, 20GB VRAM, TOR1, `qwen2.5-coder:14b`, but that GPU
+  size currently has **zero available regions** on DigitalOcean (confirmed live,
+  2026-09-16) — `droplet_size` falls back to `gpu-6000adax1-48gb` (same tier as
+  `gpu-qwen3-30b/`) so the module stays usable. ~$37.84/day on the fallback (~$18.40
+  if RTX 4000 Ada becomes available again — re-check periodically and switch back).
 - `gpu-rtx4000-llama3/` ([digitalocean-gpu-rtx4000ada-llama3-8b-vm-plan.md](./digitalocean-gpu-rtx4000ada-llama3-8b-vm-plan.md))
-  — same GPU tier as `gpu-rtx4000/` but `llama3.1:8b` instead, chosen to run "as
-  quickly and cheaply as possible" over code-specific quality. ~$18.34/day.
+  — same original GPU tier as `gpu-rtx4000/` but `llama3.1:8b` instead, chosen to run
+  "as quickly and cheaply as possible" over code-specific quality. Same RTX 4000 Ada
+  unavailability and `gpu-6000adax1-48gb` fallback as `gpu-rtx4000/` above.
+  ~$37.78/day on the fallback (~$18.34 if RTX 4000 Ada becomes available again).
 - `cost_estimates.md` — derived 1-day cost comparison across all four VM modules
   (the `project/` module has no cost - DO Projects are a free organizational feature).
 
@@ -96,7 +101,23 @@ so any one VM can be applied/destroyed without affecting the others:
   real `apply` — don't treat the slugs written in the plan docs as guaranteed current
   or guaranteed available in the configured region (a `droplet_size` can exist but
   not be orderable in a given region — hit this in practice with `cpu-qwen3-30b/`'s
-  original `nyc3` default and `c-16`, since resolved by switching to `sfo3`).
+  original `nyc3` default and `c-16`, since resolved by switching to `sfo3`; and with
+  `gpu-qwen3-30b/`'s original `gpu-l40sx1-48gb` slug, which the live
+  `GET /v2/sizes` API showed had zero available regions at all — resolved by
+  switching to `gpu-6000adax1-48gb` (RTX 6000 Ada, the plan's other interchangeable
+  48GB-VRAM option), available in `tor1`; and with `gpu-rtx4000/`'s original
+  `gpu-4000adax1-20gb` (RTX 4000 Ada) slug, confirmed via both `GET /v2/sizes` and
+  `GET /v2/regions` to be unorderable anywhere at all — no substitute exists at that
+  price/VRAM point right now, so it falls back to the same `gpu-6000adax1-48gb` 48GB
+  tier at roughly double the original cost estimate (see `cost_estimates.md`).
+  `gpu-rtx4000-llama3/` hit the identical unavailable `gpu-4000adax1-20gb` size and
+  got the same `gpu-6000adax1-48gb` fallback applied. All three GPU modules now
+  converge on that one 48GB tier until DO's smaller GPU sizes become orderable
+  again. GPU size availability shifts over time, so re-check both slug and region
+  together, not just the slug in isolation, before
+  every real apply — an empty `regions` list on `GET /v2/sizes` for a slug, or its
+  absence from every region's `sizes` array on `GET /v2/regions`, means it isn't
+  orderable anywhere right now, not just in the configured region.
 - **DigitalOcean Project assignment**: each VM module has a `project.tf` with a
   `data "digitalocean_project" { name = var.do_project_name }` lookup (default
   `"doaivm"`) and a `digitalocean_project_resources` resource assigning that

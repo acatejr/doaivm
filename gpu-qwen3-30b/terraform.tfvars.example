@@ -5,6 +5,8 @@
 
 ssh_allowed_ips = ["203.0.113.4/32"]
 
-# Verify before first apply:
-# droplet_size = "gpu-l40sx1-48gb" # `doctl compute size list`
-# image        = ""                # `doctl compute image list --public`
+# Default droplet_size is now "gpu-6000adax1-48gb" (RTX 6000 Ada) - L40S
+# (gpu-l40sx1-48gb) currently has zero available regions, confirmed via the
+# live DigitalOcean sizes API. Re-verify before apply, since this shifts:
+# droplet_size = "gpu-6000adax1-48gb" # `doctl compute size list`
+# image        = ""                    # `doctl compute image list --public`

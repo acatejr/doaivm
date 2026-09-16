@@ -1,14 +1,25 @@
-# GPU Root Module — RTX 4000 Ada (20GB VRAM), Llama 3.1 8B
+# GPU Root Module — RTX 4000 Ada (20GB VRAM, currently falls back to 48GB), Llama 3.1 8B
 
 Provisions a DigitalOcean GPU droplet running Ollama with `llama3.1:8b`, private only
 (Ollama bound to loopback, reached via SSH tunnel). See
 [../digitalocean-gpu-rtx4000ada-llama3-8b-vm-plan.md](../digitalocean-gpu-rtx4000ada-llama3-8b-vm-plan.md)
 for full design rationale. This module exists specifically to run "as quickly and
-cheaply as possible": it reuses the cheapest GPU tier available
-([../gpu-rtx4000](../gpu-rtx4000)) but swaps in a much smaller model, so first-boot
+cheaply as possible": it was designed to reuse the cheapest GPU tier available
+([../gpu-rtx4000](../gpu-rtx4000)) but swap in a much smaller model, so first-boot
 model pull and inference are both faster than either the `gpu-qwen3-30b` or
-`gpu-rtx4000` modules. Estimated cost: **~$18.34/day** if left running continuously
-— see [../cost_estimates.md](../cost_estimates.md).
+`gpu-rtx4000` modules.
+
+**Current status**: RTX 4000 Ada (`gpu-4000adax1-20gb`, this module's original design
+target) is confirmed via the live DigitalOcean sizes/regions APIs to have zero
+available regions right now — not orderable anywhere on this account. `droplet_size`
+falls back to `gpu-6000adax1-48gb` (48GB VRAM, the same tier `../gpu-qwen3-30b` and
+`../gpu-rtx4000` use) so this module stays usable; `llama3.1:8b` still runs fine
+there — the "quickly" part of this module's goal (small model, small download, low
+per-token compute) still holds, only the "cheaply" part is compromised right now.
+Estimated cost with the fallback: **~$37.78/day** (roughly double the original
+~$18.34/day estimate) if left running continuously — see
+[../cost_estimates.md](../cost_estimates.md). Re-check RTX 4000 Ada availability
+periodically and switch `droplet_size` back if it returns.
 
 ## Prerequisites
 
@@ -58,7 +69,8 @@ curl http://localhost:11434/api/generate -d '{"model":"llama3.1:8b","prompt":"wr
 ```
 
 After first boot, confirm the model is fully on-GPU: `nvidia-smi` should show
-roughly 6-7GB used (not the full 20GB), with plenty of headroom to spare.
+roughly 6-7GB used out of the 48GB available on the current fallback tier (well
+under capacity), with plenty of headroom to spare.
 
 ## Teardown
 

@@ -5,15 +5,15 @@ variable "do_token" {
 }
 
 variable "region" {
-  description = "DigitalOcean region. RTX 4000 Ada GPU droplets are only available in select regions (TOR1 as of planning - verify current availability)."
+  description = "DigitalOcean region. GPU droplets are only available in select regions - tor1 currently carries the gpu-6000adax1-48gb fallback this module uses (see droplet_size); verify current availability before apply."
   type        = string
   default     = "tor1"
 }
 
 variable "droplet_size" {
-  description = "GPU droplet size slug. Placeholder default - verify the current slug via `doctl compute size list` or the digitalocean_sizes data source before apply."
+  description = "GPU droplet size slug. RTX 4000 Ada (gpu-4000adax1-20gb, this module's original design target) is confirmed via the live DigitalOcean sizes/regions APIs (2026-09-16) to have zero available regions at all right now - not just a region mismatch, the tier isn't orderable anywhere currently. Falls back to gpu-6000adax1-48gb (48GB VRAM, available in tor1) so this module stays usable; llama3.1:8b still fits fine on 48GB, just with far more headroom than the 20GB design intended, and at roughly double the cost - see ../cost_estimates.md. Re-check RTX 4000 Ada availability periodically and switch back if/when it returns."
   type        = string
-  default     = "gpu-4000adax1-20gb"
+  default     = "gpu-6000adax1-48gb"
 }
 
 variable "image" {

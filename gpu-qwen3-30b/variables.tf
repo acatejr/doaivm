@@ -11,9 +11,9 @@ variable "region" {
 }
 
 variable "droplet_size" {
-  description = "GPU droplet size slug. Placeholder default - verify the current slug via `doctl compute size list` or the digitalocean_sizes data source before apply."
+  description = "GPU droplet size slug. L40S (gpu-l40sx1-48gb) and RTX 6000 Ada (gpu-6000adax1-48gb) are the two interchangeable 48GB-VRAM options for this plan; confirmed via the live DigitalOcean sizes API (2026-09-16) that L40S currently has zero available regions while RTX 6000 Ada is available in tor1, so that's the default here - re-verify via `doctl compute size list` before apply, since GPU availability shifts over time."
   type        = string
-  default     = "gpu-l40sx1-48gb"
+  default     = "gpu-6000adax1-48gb"
 }
 
 variable "image" {
