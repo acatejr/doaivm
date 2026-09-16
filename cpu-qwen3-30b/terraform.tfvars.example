@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars and fill in, or set DIGITALOCEAN_TOKEN / TF_VAR_do_token
+# in your shell instead of putting the token in a file.
+
+# do_token = ""
+
+# ssh_allowed_ips = ["203.0.113.4/32"]
+ssh_allowed_ips = ["0.0.0.0/0", "::/0"]
+
+# Cheaper/slower fallback (~$6/day instead of ~$12/day):
+# droplet_size      = "m-4vcpu-32gb"
+# ollama_num_thread = 4

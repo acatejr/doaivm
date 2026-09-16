@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars and fill in, or set DIGITALOCEAN_TOKEN / TF_VAR_do_token
+# in your shell instead of putting the token in a file.
+
+# do_token = ""
+
+ssh_allowed_ips = ["203.0.113.4/32"]
+
+# Verify before first apply:
+# droplet_size = "gpu-l40sx1-48gb" # `doctl compute size list`
+# image        = ""                # `doctl compute image list --public`

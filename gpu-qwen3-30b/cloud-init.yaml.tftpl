@@ -1,0 +1,57 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+write_files:
+  - path: /etc/systemd/system/ollama.service.d/override.conf
+    permissions: '0644'
+    content: |
+      [Service]
+      Environment="OLLAMA_MODELS=/mnt/ollama-models"
+      Environment="OLLAMA_HOST=127.0.0.1:11434"
+
+  - path: /usr/local/bin/ollama-first-boot.sh
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      # cloud-init's runcmd executes with no $HOME set, and the ollama CLI
+      # panics ("$HOME is not defined") during its own init if it's missing -
+      # this only affects the client invocations below, not the systemd
+      # service (which gets its environment from the unit file, not a shell).
+      export HOME=/root
+
+      echo "== Waiting for /mnt/ollama-models to be mounted =="
+      for i in $(seq 1 30); do
+        mountpoint -q /mnt/ollama-models && break
+        sleep 2
+      done
+      mountpoint -q /mnt/ollama-models || { echo "model volume never mounted"; exit 1; }
+
+      echo "== Waiting for the Ollama API socket =="
+      for i in $(seq 1 60); do
+        curl -sf http://127.0.0.1:11434/api/version >/dev/null && break
+        sleep 2
+      done
+
+      echo "== Pulling ${ollama_model} =="
+      ollama pull ${ollama_model}
+
+      echo "== nvidia-smi =="
+      nvidia-smi || echo "WARNING: nvidia-smi failed - GPU not visible"
+
+runcmd:
+  - mkdir -p /mnt/ollama-models
+  - [ bash, -c, "blkid -L ollama_models >/dev/null 2>&1 && mount -L ollama_models /mnt/ollama-models || true" ]
+  - [ bash, -c, "grep -q ollama_models /etc/fstab || echo 'LABEL=ollama_models /mnt/ollama-models ext4 defaults,nofail,discard 0 2' >> /etc/fstab" ]
+  - mount -a
+  - curl -fsSL https://ollama.com/install.sh | sh
+  # The installer above creates the unprivileged "ollama" system user and a
+  # systemd unit that runs the daemon as that user (User=ollama Group=ollama).
+  # The mounted volume is owned by root until we hand it to that user, or the
+  # service fails to initialize its model store and crash-loops.
+  - chown ollama:ollama /mnt/ollama-models
+  - systemctl daemon-reload
+  - systemctl enable --now ollama
+  - /usr/local/bin/ollama-first-boot.sh
