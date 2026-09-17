@@ -7,7 +7,7 @@ variable "do_token" {
 variable "region" {
   description = "DigitalOcean region. GPU droplets are only available in select regions - tor1 currently carries the gpu-6000adax1-48gb fallback this module uses (see droplet_size); verify current availability before apply."
   type        = string
-  default     = "tor1"
+  default     = "nyc1"
 }
 
 variable "droplet_size" {
@@ -17,9 +17,9 @@ variable "droplet_size" {
 }
 
 variable "image" {
-  description = "Droplet image slug. Leave null to fall back to the newest available Ubuntu image in the region; set explicitly once the AI/ML Ready GPU image slug is confirmed via `doctl compute image list --public`."
+  description = "Droplet image slug. \"gpu-h100x1-base\" is DigitalOcean's documented AI/ML Ready image slug for ALL single-GPU droplets regardless of GPU model (their own docs: \"For all single GPU Droplets, use gpu-h100x1-base, even for single GPU plans using GPUs other than H100s\") - it ships with NVIDIA drivers/CUDA preinstalled, which this module's cloud-init relies on rather than installing drivers itself. This was previously auto-detected via a digitalocean_images data source sorted by creation date, which twice resolved to the wrong image live (a private, already-deleted third-party marketplace image, then the 8-GPU variant) - hardcoded here instead since DO's own docs give a stable, correct answer. Re-verify via `doctl compute image list --public` if DO changes this guidance."
   type        = string
-  default     = null
+  default     = "gpu-h100x1-base"
 }
 
 variable "droplet_name" {

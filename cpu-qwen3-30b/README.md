@@ -60,3 +60,8 @@ terraform destroy
 At this tier the always-on cost is low enough (~$6-12/day) that leaving it up for
 short stretches is far less punishing than the GPU plans, but destroying between
 extended idle periods is still the cheapest option.
+
+### DO Notes 
+
+Estimated Digital Ocean Monthly Cost - $336/mo
+Tell me a Joke Speed test - very fast and succinct

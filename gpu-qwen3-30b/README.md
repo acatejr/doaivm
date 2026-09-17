@@ -15,20 +15,26 @@ for full design rationale. Estimated cost: **~$38/day** if left running continuo
   once, first. This module assigns its droplet/volume/VPC into that project via a
   `data "digitalocean_project"` lookup by name, which fails if the project doesn't
   exist yet.
-- (Optional but recommended) `doctl`, authenticated, to verify the GPU size and
-  AI/ML Ready image slugs before the first apply.
+- (Optional but recommended) `doctl`, authenticated, to verify current GPU
+  capacity before the first apply - see "Before the first apply" below.
 
 ## Before the first apply
 
-The `droplet_size` and `image` defaults in this module are **placeholders**. Confirm
-them against the live API:
+`image` defaults to `gpu-h100x1-base`, DigitalOcean's documented AI/ML Ready image
+for **all** single-GPU droplets regardless of GPU model (their own docs: "use
+gpu-h100x1-base, even for single GPU plans using GPUs other than H100s") — this
+shouldn't need changing. `droplet_size` and `region`, however, are subject to real,
+fast-moving GPU capacity constraints (confirmed live: availability for this 48GB
+tier has flipped within *minutes* between checks, not just days) — confirm both
+together against the live API immediately before applying, since a value that
+worked five minutes ago may not now:
 
 ```sh
 doctl compute size list | grep -i gpu
-doctl compute image list --public | grep -i "ai/ml"
 ```
 
-Set the confirmed values in `terraform.tfvars` if they differ from the defaults.
+Set the confirmed values in `terraform.tfvars` if they differ from the defaults, and
+be prepared to retry if capacity vanishes between `plan` and `apply`.
 
 ## Usage
 
@@ -60,3 +66,9 @@ GPU droplets bill hourly regardless of utilization. Destroy when not in active u
 ```sh
 terraform destroy
 ```
+### DO Notes 
+
+For some reason this one creates a volume that needs to be manually destoyed via the DO UI.
+This droplet does not build as expected.
+Estimated Digital Ocean Monthly Cost - $
+Tell me a Joke Speed test - 

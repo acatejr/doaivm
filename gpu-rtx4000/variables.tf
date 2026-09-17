@@ -5,21 +5,21 @@ variable "do_token" {
 }
 
 variable "region" {
-  description = "DigitalOcean region. GPU droplets are only available in select regions - tor1 currently carries the gpu-6000adax1-48gb fallback this module uses (see droplet_size); verify current availability before apply."
+  description = "DigitalOcean region. GPU droplets are only available in select regions - tor1 currently carries the gpu-h100x1-80gb fallback this module uses (see droplet_size); verify current availability before apply, since GPU capacity here has been observed to shift within minutes."
   type        = string
   default     = "tor1"
 }
 
 variable "droplet_size" {
-  description = "GPU droplet size slug. RTX 4000 Ada (gpu-4000adax1-20gb, this module's original design target) is confirmed via the live DigitalOcean sizes/regions APIs (2026-09-16) to have zero available regions at all right now - not just a region mismatch, the tier isn't orderable anywhere currently. Falls back to gpu-6000adax1-48gb (48GB VRAM, available in tor1) so this module stays usable; qwen2.5-coder:14b still fits fine on 48GB, just with far more headroom than the 20GB design intended, and at roughly double the cost - see ../cost_estimates.md. Re-check RTX 4000 Ada availability periodically and switch back if/when it returns."
+  description = "GPU droplet size slug. RTX 4000 Ada (gpu-4000adax1-20gb, this module's original design target) and the entire 48GB tier (gpu-l40sx1-48gb / gpu-6000adax1-48gb, the first fallback used here) are all confirmed via the live DigitalOcean sizes/regions APIs (2026-09-17) to have zero available regions at all right now. The only GPUs orderable anywhere at that check were gpu-h100x1-80gb (NVIDIA H100, $4.41/hr) and gpu-mi325x1-256gb (AMD MI325X, $3.80/hr, needs the gpu-amd-base ROCm image instead - untested in this repo). Falls back to gpu-h100x1-80gb since it reuses the already-configured gpu-h100x1-base NVIDIA/CUDA image with no other changes needed; qwen2.5-coder:14b runs fine on it with far more headroom than intended, at roughly 3x the previous ~$18-38/day estimate - see ../cost_estimates.md. GPU capacity shifts fast here (confirmed: different availability across checks minutes apart) - re-verify before every apply and switch to a cheaper tier the moment one is orderable again."
   type        = string
-  default     = "gpu-6000adax1-48gb"
+  default     = "gpu-h100x1-80gb"
 }
 
 variable "image" {
-  description = "Droplet image slug. Leave null to fall back to the newest available Ubuntu image in the region; set explicitly once the AI/ML Ready GPU image slug is confirmed via `doctl compute image list --public`."
+  description = "Droplet image slug. \"gpu-h100x1-base\" is DigitalOcean's documented AI/ML Ready image slug for ALL single-GPU droplets regardless of GPU model (their own docs: \"For all single GPU Droplets, use gpu-h100x1-base, even for single GPU plans using GPUs other than H100s\") - it ships with NVIDIA drivers/CUDA preinstalled, which this module's cloud-init relies on rather than installing drivers itself. This was previously auto-detected via a digitalocean_images data source sorted by creation date, which twice resolved to the wrong image live (a private, already-deleted third-party marketplace image, then the 8-GPU variant) - hardcoded here instead since DO's own docs give a stable, correct answer. Re-verify via `doctl compute image list --public` if DO changes this guidance."
   type        = string
-  default     = null
+  default     = "gpu-h100x1-base"
 }
 
 variable "droplet_name" {

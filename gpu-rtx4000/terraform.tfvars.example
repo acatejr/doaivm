@@ -5,9 +5,9 @@
 
 ssh_allowed_ips = ["203.0.113.4/32"]
 
-# Default droplet_size is now "gpu-6000adax1-48gb" - RTX 4000 Ada
-# (gpu-4000adax1-20gb) currently has zero available regions anywhere,
-# confirmed via the live DigitalOcean sizes/regions APIs. Re-verify before
-# apply, and switch back if RTX 4000 Ada becomes available again:
-# droplet_size = "gpu-6000adax1-48gb" # `doctl compute size list`
-# image        = ""                    # `doctl compute image list --public`
+# Default droplet_size is now "gpu-h100x1-80gb" ($4.41/hr) - the entire 48GB
+# tier and RTX 4000 Ada are all at zero available regions right now,
+# confirmed via the live DigitalOcean sizes/regions APIs. GPU capacity here
+# shifts within minutes - re-verify immediately before apply, and switch to
+# a cheaper tier the moment one is orderable again:
+# droplet_size = "gpu-h100x1-80gb" # `doctl compute size list`

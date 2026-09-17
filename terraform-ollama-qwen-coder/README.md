@@ -184,3 +184,8 @@ stretch (weeks) and don't mind the re-download.
 check in the DigitalOcean dashboard that no droplet, volume, or firewall
 named `ollama-qwen-coder*` is left behind if you ever run commands outside
 these scripts.
+
+### DO Notes
+Cost: $49/mo -- $0.073 / hour
+Tell me a Joke Speed Test: Medium.  Slow rendering to screen.
+Overall not a bad option for the price.

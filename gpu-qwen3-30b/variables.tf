@@ -5,21 +5,21 @@ variable "do_token" {
 }
 
 variable "region" {
-  description = "DigitalOcean region. RTX 6000 Ada / L40S GPU droplets are only available in select regions (TOR1 as of planning - verify current availability)."
+  description = "DigitalOcean region. RTX 6000 Ada / L40S GPU droplets are only available in select regions - sfo1 is not an orderable region at all (confirmed live, 2026-09-17: DO's regions API marks it unavailable), so this must stay tor1, where the current droplet_size (L40S) is actually available. Verify current availability before apply, since it shifts."
   type        = string
   default     = "tor1"
 }
 
 variable "droplet_size" {
-  description = "GPU droplet size slug. L40S (gpu-l40sx1-48gb) and RTX 6000 Ada (gpu-6000adax1-48gb) are the two interchangeable 48GB-VRAM options for this plan; confirmed via the live DigitalOcean sizes API (2026-09-16) that L40S currently has zero available regions while RTX 6000 Ada is available in tor1, so that's the default here - re-verify via `doctl compute size list` before apply, since GPU availability shifts over time."
+  description = "GPU droplet size slug. L40S (gpu-l40sx1-48gb) and RTX 6000 Ada (gpu-6000adax1-48gb) are the two interchangeable 48GB-VRAM options for this plan, and availability flips between them over time - confirmed live (2026-09-17) that L40S is back to available in tor1 while RTX 6000 Ada now has zero available regions (the reverse of an earlier check), so this reverts to the module's original L40S target. Re-verify via `doctl compute size list` before every apply, since GPU availability shifts - if this slug stops working, check whether gpu-6000adax1-48gb has come back instead."
   type        = string
-  default     = "gpu-6000adax1-48gb"
+  default     = "gpu-l40sx1-48gb"
 }
 
 variable "image" {
-  description = "Droplet image slug. Leave null to fall back to the newest available Ubuntu image in the region; set explicitly once the AI/ML Ready GPU image slug is confirmed via `doctl compute image list --public`."
+  description = "Droplet image slug. \"gpu-h100x1-base\" is DigitalOcean's documented AI/ML Ready image slug for ALL single-GPU droplets regardless of GPU model (their own docs: \"For all single GPU Droplets, use gpu-h100x1-base, even for single GPU plans using GPUs other than H100s\") - it ships with NVIDIA drivers/CUDA preinstalled, which this module's cloud-init relies on rather than installing drivers itself. This was previously auto-detected via a digitalocean_images data source sorted by creation date, which twice resolved to the wrong image live (a private, already-deleted third-party marketplace image, then the 8-GPU variant) - hardcoded here instead since DO's own docs give a stable, correct answer. Re-verify via `doctl compute image list --public` if DO changes this guidance."
   type        = string
-  default     = null
+  default     = "gpu-h100x1-base"
 }
 
 variable "droplet_name" {

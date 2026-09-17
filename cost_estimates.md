@@ -22,23 +22,26 @@ At the higher end of DO's quoted $2-3/hr range for this GPU class, a full day co
 **~$48-72** instead. The plan doc flags this explicitly: destroy the droplet when not
 in active use, since GPU droplets bill hourly regardless of utilization.
 
-## GPU Plan — RTX 4000 Ada (20GB VRAM), TOR1 — currently falls back to 48GB
+## GPU Plan — RTX 4000 Ada (20GB VRAM), TOR1 — currently falls back to H100 80GB
 
 Module: [`gpu-rtx4000/`](./gpu-rtx4000)
 
 Runs `qwen2.5-coder:14b` (dense, fits comfortably on-GPU at ~10-11GB used) instead of
 the 30B MoE model used by the L40S/RTX 6000 Ada plan.
 
-**Live-availability note (2026-09-16)**: RTX 4000 Ada (`gpu-4000adax1-20gb`) has zero
-available regions right now on DigitalOcean's live sizes/regions APIs — the original
-$18.40/day estimate below assumed that tier. Until it's available again, this module
-falls back to `gpu-6000adax1-48gb` (the same 48GB tier `gpu-qwen3-30b/` uses):
+**Live-availability note (2026-09-17, updated)**: RTX 4000 Ada (`gpu-4000adax1-20gb`)
+and the entire 48GB tier (`gpu-l40sx1-48gb` / `gpu-6000adax1-48gb`, this module's
+first fallback) are now *all* at zero available regions on DigitalOcean's live
+sizes/regions APIs — GPU capacity here has been observed to shift within minutes.
+The only GPU confirmed orderable in `tor1` at last check (besides a pricier,
+untested-in-this-repo AMD MI325X option) was NVIDIA H100 80GB, so this module now
+falls back to `gpu-h100x1-80gb`:
 
 | Item | Rate | 24h Cost |
 |---|---|---|
-| GPU droplet compute (48GB VRAM fallback) | $1.57/hr | **~$37.68** |
+| GPU droplet compute (H100 80GB fallback) | $4.41/hr | **~$105.84** |
 | Model volume (50GB, `model_volume_size_gb` default) | $0.10/GB-mo ≈ $0.00329/GB-day | ~$0.16 |
-| **Total (1 day, current fallback)** | | **~$37.84** |
+| **Total (1 day, current fallback)** | | **~$106.00** |
 
 Original 20GB-tier estimate, for reference (once/if RTX 4000 Ada is available again):
 
@@ -47,6 +50,9 @@ Original 20GB-tier estimate, for reference (once/if RTX 4000 Ada is available ag
 | RTX 4000 Ada GPU droplet (20GB VRAM, 8 vCPU, 32GB RAM) | $0.76/hr | **$18.24** |
 | Model volume (50GB, `model_volume_size_gb` default) | $0.10/GB-mo ≈ $0.00329/GB-day | ~$0.16 |
 | **Total (1 day, if available)** | | **~$18.40** |
+
+The 48GB-tier fallback (~$37.84/day) used briefly between these two is also
+currently unavailable — see the module's README for the full history.
 
 ## GPU Plan — RTX 4000 Ada (20GB VRAM), TOR1, Llama 3.1 8B — currently falls back to 48GB
 
@@ -99,17 +105,20 @@ additional storage line item.
 | Plan | Module | 24h Cost |
 |---|---|---|
 | GPU — L40S/RTX 6000 Ada, `qwen3-coder:30b` (recommended GPU sizing) | `gpu-qwen3-30b/` | **~$38.00** |
-| GPU — RTX 4000 Ada → 48GB fallback, `qwen2.5-coder:14b` (see note above) | `gpu-rtx4000/` | **~$37.84** (~$18.40 if RTX 4000 Ada returns) |
+| GPU — RTX 4000 Ada → H100 80GB fallback, `qwen2.5-coder:14b` (see note above) | `gpu-rtx4000/` | **~$106.00** (~$18.40 if RTX 4000 Ada returns) |
 | GPU — RTX 4000 Ada → 48GB fallback, `llama3.1:8b` (see note above) | `gpu-rtx4000-llama3/` | **~$37.78** (~$18.34 if RTX 4000 Ada returns) |
 | CPU-Optimized 32GB/16vCPU, `qwen3-coder:30b` (recommended CPU tier) | `cpu-qwen3-30b/` | **$12.00** |
 | Memory-Optimized 32GB/4vCPU, `qwen3-coder:30b` (cheapest fallback) | `cpu-qwen3-30b/` (override) | **$6.00** |
 
-All three GPU modules currently converge on the same 48GB-VRAM tier (`gpu-6000adax1-48gb`)
-since neither of the smaller/cheaper GPU sizes this repo originally targeted
-(L40S, RTX 4000 Ada) is orderable right now — the difference between them today is
-purely which model each pulls, not hardware cost. The CPU-Optimized plan costs
-roughly **3x less per day** than any GPU module right now, and the Memory-Optimized
-fallback costs roughly **6x less**, at the cost of significantly lower inference
-throughput. All figures are compute + (where applicable) storage only — they
-exclude bandwidth overages, snapshots, or reserved IPs, none of which are enabled
-by default in any plan.
+GPU capacity for the smaller/cheaper tiers this repo originally targeted (RTX 4000
+Ada, L40S, RTX 6000 Ada) fluctuates fast enough that the three GPU modules no longer
+necessarily agree on hardware tier — `gpu-rtx4000/` was pushed all the way to H100
+80GB (the only GPU confirmed orderable in `tor1` at last check, several times pricier
+than the other two), while `gpu-qwen3-30b/` and `gpu-rtx4000-llama3/` were last
+confirmed on the 48GB tier. Re-check each module's own README for its current
+resolved cost before relying on this table. The CPU-Optimized plan costs
+significantly less per day than any GPU module right now, and the Memory-Optimized
+fallback costs even less, at the cost of significantly lower inference throughput.
+All figures are compute + (where applicable) storage only — they exclude bandwidth
+overages, snapshots, or reserved IPs, none of which are enabled by default in any
+plan.
