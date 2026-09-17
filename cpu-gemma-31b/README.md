@@ -98,5 +98,5 @@ terraform destroy
 
 ### DO Notes 
 
-Estimated Digital Ocean Monthly Cost - $336/mo
+Estimated Digital Ocean Monthly Cost - $336 / mo - $0.50 / hr
 Tell me a Joke Speed test - slow and very verbose.  Lot's of extraneous response content,
