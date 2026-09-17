@@ -4,15 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-This repo contains six Terraform root modules: five independent VM modules, each
+This repo contains seven Terraform root modules: six independent VM modules, each
 provisioning a DigitalOcean droplet running Ollama as a private backend, plus one
 bootstrap module that owns the shared DigitalOcean *Project* (DO's resource-grouping
-feature, unrelated to this repo's own name) all five droplets are assigned into.
-Companion plan docs live alongside the four earlier modules (`cpu-gemma-31b/` has no
-plan doc - it was built directly as a Terraform module, then fixed in review):
+feature, unrelated to this repo's own name) all six droplets are assigned into.
+Companion plan docs live alongside the four earliest modules (`cpu-gemma-31b/` and
+`devaidrop/` have no plan doc - built directly as Terraform modules):
 
 - `project/` — creates the DigitalOcean Project named `doaivm` (see its README).
-  **Must be applied once, before the first apply of any of the five VM modules** —
+  **Must be applied once, before the first apply of any of the six VM modules** —
   they each look this project up by name and fail if it doesn't exist yet.
 - `gpu-qwen3-30b/` ([digitalocean-gpu-l40s-48gb-vm-plan.md](./digitalocean-gpu-l40s-48gb-vm-plan.md))
   — RTX 6000 Ada/L40S, 48GB VRAM, TOR1, `qwen3-coder:30b`. Fast but expensive
@@ -46,30 +46,104 @@ plan doc - it was built directly as a Terraform module, then fixed in review):
   at all in DO's catalog, Ollama and SSH both wide open to `0.0.0.0/0`, missing
   `$HOME` export) - all fixed in review; see its README's "What was fixed here" for
   the full list. No cost estimate added to `cost_estimates.md` yet.
+- `devaidrop/` — a standalone copy of `cpu-qwen3-30b/` (same `qwen3-coder:30b` on
+  CPU-Optimized `c-16`) made by literally copying that module's files, then giving
+  it its own identity (`droplet_name = "devaidrop"`, so its VPC/firewall/SSH key
+  don't collide with the original) and its own independent state - the `.terraform`
+  cache, lock-file-pinned state, and `terraform.tfstate`/`.backup` were deliberately
+  *not* copied from the original, since carrying over another module's state would
+  make Terraform think this module already owns real, already-existing resources it
+  doesn't. Same cost profile as `cpu-qwen3-30b/` (~$12/day). **This module only**
+  also runs [LiteLLM](https://docs.litellm.ai/)'s proxy in front of the local
+  Ollama API, giving the model an OpenAI-compatible `/v1/...` surface - installed
+  into its own venv (`/opt/litellm-venv`, since Ubuntu 24.04 blocks system-wide
+  `pip install`) as a `litellm.service` systemd unit (`Requires=ollama.service`,
+  started only after `ollama-first-boot.sh` finishes so the proxy's first request
+  never races an unpulled model). Same private-only posture as Ollama: bound to
+  `127.0.0.1:4000`, no public firewall rule, its own SSH tunnel
+  (`litellm_tunnel_command` output). Don't add this to any other module without
+  being asked - it was scoped to `devaidrop/` specifically.
+  - **Auth**: `var.litellm_master_key` (required, no default, sensitive) is set as
+    `LITELLM_MASTER_KEY` in `litellm.service`'s environment. It's the required
+    `Authorization: Bearer <key>` on every `/v1/...` API call - fully working.
+    It does **not**, despite LiteLLM's own docs suggesting the master key can
+    substitute for `UI_PASSWORD`, make `/ui` admin login actually work here -
+    that additionally requires a connected database regardless of the key (see
+    the dedicated bullet on this below - it's a separate, deeper issue than
+    auth configuration). Initially deployed with no master key at all (open
+    API), which is why `terraform-ollama-qwen-coder`-style "no auth, private
+    network only" was the starting posture here too - added the master key
+    after the user asked for `/ui` access specifically.
+  - **Terraform template gotcha hit while adding this**: a `curl -w "%{http_code}"`
+    format string inside `cloud-init.yaml.tftpl` broke `templatefile()` - Terraform's
+    own template syntax also uses `%{ ... }` for control directives, so it tried to
+    parse `%{http_code}` as one and failed with "Invalid template control keyword".
+    Fixed by escaping it as `%%{http_code}` (Terraform's literal-percent escape).
+    Any future cloud-init edit that embeds a literal `%{...}`-shaped string (curl
+    format specifiers being the most likely case) needs this same escaping.
+  - **Incident**: the `devaidrop` droplet from the original LiteLLM setup was
+    destroyed (via `terraform destroy`, by the user, outside this conversation)
+    between verifying LiteLLM worked and adding the master key - discovered when a
+    live SSH fix attempt got "connection timed out" instead of the expected
+    "connection refused"; `GET /v2/droplets` confirmed zero droplets existed. The
+    master key ended up going straight into the Terraform config for the next
+    apply instead of a live SSH patch, since there was nothing left to SSH into.
+  - **`pip install 'litellm[proxy]'` alone is not enough**: without the `prisma`
+    package also installed, LiteLLM's *own* auth-error handler crashes with
+    `ModuleNotFoundError: No module named 'prisma'` on every failed-auth request
+    (`user_api_key_auth.py` → `_handle_authentication_error` → `_as_proxy_exception`
+    unconditionally does `import prisma` to check for DB errors, even with no
+    database configured at all). The practical symptom: any request with a
+    missing/invalid key - including the `/ui` login form itself - returns a raw
+    500 instead of a clean 401. Confirmed live on the recreated `devaidrop`
+    droplet: unauthenticated `curl /v1/models` 500'd until `pip install prisma`
+    was added; after that it correctly 401'd and `/ui` *loaded* normally. `runcmd`
+    now installs `'litellm[proxy]' prisma` together - keep them together in any
+    future LiteLLM setup, even without an actual database configured. **This
+    fixes the API's error-handling crash, but does NOT make `/ui` login work**
+    (see next point) - installing the `prisma` package is not the same as having
+    a connected database.
+  - **`/ui` login is a hard dead end without a real database - this is NOT
+    fixable by any master-key/env-var configuration**: LiteLLM's UI login
+    (`POST /v2/login` → `login_v2()` → `authenticate_user()` →
+    `user_update()`) unconditionally tries to look up/update a user record via
+    Prisma on *every* login attempt, master key correct or not. With no
+    `DATABASE_URL` configured, this raises `Exception: Not connected to DB!`
+    and the login POST returns `400` - confirmed live via
+    `journalctl -u litellm`. The `/v1/...` API endpoints (chat completions,
+    models list) do **not** hit this code path and work perfectly with just
+    `LITELLM_MASTER_KEY` set - only the browser dashboard login is blocked.
+    Presented this tradeoff to the user (add Postgres - either local on the
+    droplet or a separate DO Managed Database - vs. API-only); they chose
+    API-only, so `devaidrop/` intentionally has no database and `/ui` is
+    documented as non-functional rather than "fixed." If UI access is wanted
+    later, provisioning a database is a prerequisite, not a bug fix.
 - `cost_estimates.md` — derived 1-day cost comparison across the first four VM
   modules (the `project/` module has no cost - DO Projects are a free organizational
-  feature; `cpu-gemma-31b/` hasn't been added to this comparison yet).
+  feature; `cpu-gemma-31b/` and `devaidrop/` haven't been added to this comparison
+  yet - `devaidrop/`'s is identical to `cpu-qwen3-30b/`'s).
 
 When extending or modifying any module, follow the project layout and resource
 breakdown described in its companion `.md` file rather than improvising a different
-structure (or, for `cpu-gemma-31b/`, the pattern established by the other four VM
-modules — see droplet.tf/network.tf/project.tf there for reference). Each of the five
-VM modules keeps fully independent state (its own `terraform.tfstate`) so any one VM
-can be applied/destroyed without affecting the others — preserve that independence
-rather than merging them into a shared module. `project/` is the sole exception by
-design: it's a shared singleton precisely because DigitalOcean Project names must be
-unique per account, so it can't be safely created redundantly from five separate
-states (see `project/README.md` for why) — never add a `resource "digitalocean_project"`
+structure (or, for `cpu-gemma-31b/`/`devaidrop/`, the pattern established by the
+other four VM modules — see droplet.tf/network.tf/project.tf there for reference).
+Each of the six VM modules keeps fully independent state (its own
+`terraform.tfstate`) so any one VM can be applied/destroyed without affecting the
+others — preserve that independence rather than merging them into a shared module.
+`project/` is the sole exception by design: it's a shared singleton precisely because
+DigitalOcean Project names must be unique per account, so it can't be safely created
+redundantly from six separate states (see `project/README.md` for why) — never add a
+`resource "digitalocean_project"`
 to a VM module, only a `data "digitalocean_project"` lookup (this exact mistake was
 found and fixed in `cpu-gemma-31b/`'s draft).
 
 `ssh.sh` at the repo root is a convenience wrapper:
-`./ssh.sh <gpu-qwen3-30b|cpu-qwen3-30b|gpu-rtx4000|gpu-rtx4000-llama3|cpu-gemma-31b>`
+`./ssh.sh <gpu-qwen3-30b|cpu-qwen3-30b|gpu-rtx4000|gpu-rtx4000-llama3|cpu-gemma-31b|devaidrop>`
 reads that module's `ssh_command` output and execs straight into an SSH session.
 
-## Architecture (shared across all five VM modules)
+## Architecture (shared across all six VM modules)
 
-All five modules share the same shape and are meant to stay parallel/independent
+All six modules share the same shape and are meant to stay parallel/independent
 Terraform roots (separate `terraform.tfstate` each) rather than one shared module,
 so any one VM can be applied/destroyed without affecting the others:
 
@@ -195,9 +269,9 @@ so any one VM can be applied/destroyed without affecting the others:
   support: the cloud-init in these modules does not install NVIDIA
   drivers/CUDA itself, it relies entirely on the image already having them.
 - **Shared SSH key collision across every module**: every module in this repo
-  (the five `doaivm` VM modules, `cpu-gemma-31b/`, and the standalone
-  `terraform-ollama-qwen-coder/`) defaults `ssh_public_key_path` to the same
-  `~/.ssh/id_ed25519.pub` and independently creates its own
+  (the six `doaivm` VM modules including `devaidrop/`, `cpu-gemma-31b/`, and the
+  standalone `terraform-ollama-qwen-coder/`) defaults `ssh_public_key_path` to the
+  same `~/.ssh/id_ed25519.pub` and independently creates its own
   `digitalocean_ssh_key` resource from it. DigitalOcean deduplicates SSH keys
   by content/fingerprint, not by name - only the *first* module to actually
   apply successfully registers the key; every other module's own
@@ -234,11 +308,11 @@ so any one VM can be applied/destroyed without affecting the others:
 
 `project/` first (once, before any VM module's first apply): `terraform init`,
 `terraform validate`, `terraform plan`, `terraform apply`, `terraform destroy` only
-after all five VM modules are destroyed (a non-default DO Project can't be deleted
+after all six VM modules are destroyed (a non-default DO Project can't be deleted
 while resources are still assigned to it).
 
 Per VM module (`gpu-qwen3-30b/`, `cpu-qwen3-30b/`, `gpu-rtx4000/`,
-`gpu-rtx4000-llama3/`, `cpu-gemma-31b/`): `terraform init`, `terraform validate`, `terraform plan`
+`gpu-rtx4000-llama3/`, `cpu-gemma-31b/`, `devaidrop/`): `terraform init`, `terraform validate`, `terraform plan`
 (review the resolved size/image before applying), `terraform apply` (returns once
 the droplet resource itself is created — cloud-init/Ollama setup then continues in
 the background; SSH in and check `cloud-init status` or tail
