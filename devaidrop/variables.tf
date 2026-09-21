@@ -62,9 +62,3 @@ variable "do_project_name" {
   type        = string
   default     = "doaivm"
 }
-
-variable "litellm_master_key" {
-  description = "Master key for LiteLLM's proxy - required as a Bearer token on every /v1/... API call once set. Does NOT enable working /ui admin login: LiteLLM's UI login flow requires a connected Postgres database (via Prisma) regardless of master key correctness, and this module doesn't provision one (raises \"Not connected to DB!\" / 400 on POST /v2/login) - see README's \"Admin UI does not work here\" section. No default - generate one yourself (e.g. `openssl rand -hex 24`) and set it in terraform.tfvars; never commit a real value here."
-  type        = string
-  sensitive   = true
-}

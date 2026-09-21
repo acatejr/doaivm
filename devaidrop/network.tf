@@ -8,13 +8,21 @@ resource "digitalocean_firewall" "this" {
 
   droplet_ids = [digitalocean_droplet.this.id]
 
-  # No inbound rule for 11434 (Ollama) - it is bound to 127.0.0.1 on the
-  # droplet and is only ever reached via SSH tunnel. Do not add a public
-  # inbound rule for it here.
   inbound_rule {
     protocol         = "tcp"
     port_range       = "22"
     source_addresses = var.ssh_allowed_ips
+  }
+
+  # Temporary, explicit exception to this repo's private-only Ollama posture
+  # (see CLAUDE.md) - the API is bound to 0.0.0.0 on the droplet and this rule
+  # exposes it to the whole internet, unauthenticated. Requested directly by
+  # the user for devaidrop specifically, "for now" - not a pattern to carry
+  # into any other module without being asked again.
+  inbound_rule {
+    protocol         = "tcp"
+    port_range       = "11434"
+    source_addresses = ["0.0.0.0/0"]
   }
 
   outbound_rule {

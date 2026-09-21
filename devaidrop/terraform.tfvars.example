@@ -9,8 +9,3 @@ ssh_allowed_ips = ["0.0.0.0/0", "::/0"]
 # Cheaper/slower fallback (~$6/day instead of ~$12/day):
 # droplet_size      = "m-4vcpu-32gb"
 # ollama_num_thread = 4
-
-# Required: master key for LiteLLM's /v1/... API auth (Bearer token). Does NOT
-# enable /ui admin login - that needs a database this module doesn't provision.
-# Generate one yourself, e.g.: openssl rand -hex 24
-litellm_master_key = "sk-litellm-REPLACE-ME"

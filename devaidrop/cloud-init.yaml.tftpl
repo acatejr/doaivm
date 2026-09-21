@@ -8,7 +8,11 @@ write_files:
     content: |
       [Service]
       Environment="OLLAMA_MODELS=/opt/ollama-models"
-      Environment="OLLAMA_HOST=127.0.0.1:11434"
+      # Bound to 0.0.0.0, not 127.0.0.1: this module is a temporary, explicit
+      # exception to this repo's private-only Ollama posture (see CLAUDE.md) -
+      # the API is reachable by anyone who can reach the droplet's public IP,
+      # with no auth in front of it.
+      Environment="OLLAMA_HOST=0.0.0.0:11434"
       Environment="OLLAMA_NUM_THREAD=${ollama_num_thread}"
       Environment="OLLAMA_CONTEXT_LENGTH=${ollama_num_ctx}"
 
@@ -36,61 +40,6 @@ write_files:
       echo "== Smoke test (latency/throughput visible below) =="
       ollama run ${ollama_model} --verbose "1+1" || true
 
-  # devaidrop-only: fronts the local Ollama API with LiteLLM's OpenAI-compatible
-  # proxy, so OpenAI-client-shaped tools can talk to this model. Kept on the
-  # same private-only posture as Ollama itself - bound to 127.0.0.1, no public
-  # firewall rule, reached via its own SSH tunnel.
-  - path: /etc/litellm/config.yaml
-    permissions: '0644'
-    content: |
-      model_list:
-        - model_name: "${ollama_model}"
-          litellm_params:
-            model: "ollama/${ollama_model}"
-            api_base: "http://127.0.0.1:11434"
-      litellm_settings:
-        drop_params: true
-
-  - path: /etc/systemd/system/litellm.service
-    permissions: '0644'
-    content: |
-      [Unit]
-      Description=LiteLLM Proxy (OpenAI-compatible API in front of Ollama)
-      After=network-online.target ollama.service
-      Requires=ollama.service
-
-      [Service]
-      Environment="LITELLM_MASTER_KEY=${litellm_master_key}"
-      ExecStart=/opt/litellm-venv/bin/litellm --config /etc/litellm/config.yaml --port 4000 --host 127.0.0.1
-      Restart=always
-      RestartSec=3
-
-      [Install]
-      WantedBy=multi-user.target
-
-  - path: /usr/local/bin/litellm-first-boot.sh
-    permissions: '0755'
-    content: |
-      #!/usr/bin/env bash
-      set -euo pipefail
-
-      echo "== Waiting for the LiteLLM proxy socket =="
-      for i in $(seq 1 60); do
-        curl -sf -H "Authorization: Bearer ${litellm_master_key}" http://127.0.0.1:4000/v1/models >/dev/null 2>&1 && break
-        sleep 2
-      done
-
-      echo "== LiteLLM model list (should include ${ollama_model}) =="
-      curl -sf -H "Authorization: Bearer ${litellm_master_key}" http://127.0.0.1:4000/v1/models || echo "WARNING: LiteLLM /v1/models check failed"
-
-      echo "== Confirming unauthenticated requests are correctly rejected =="
-      status=$(curl -s -o /dev/null -w "%%{http_code}" http://127.0.0.1:4000/v1/models)
-      if [ "$status" = "401" ]; then
-        echo "OK: unauthenticated request got 401 as expected"
-      else
-        echo "WARNING: unauthenticated request got HTTP $status, expected 401"
-      fi
-
 runcmd:
   - curl -fsSL https://ollama.com/install.sh | sh
   # The installer above creates the unprivileged "ollama" system user and a
@@ -102,16 +51,3 @@ runcmd:
   - systemctl daemon-reload
   - systemctl enable --now ollama
   - /usr/local/bin/ollama-first-boot.sh
-  # LiteLLM setup happens after Ollama + the model pull complete above, so the
-  # proxy's first real request doesn't race an unpulled model.
-  - apt-get install -y python3-venv
-  - python3 -m venv /opt/litellm-venv
-  - /opt/litellm-venv/bin/pip install --upgrade pip
-  # prisma is required even without a configured database - LiteLLM's shared
-  # auth-error handler unconditionally imports it to check for DB errors, and
-  # without it every *failed* auth attempt (missing/invalid key, including the
-  # /ui login form) 500s instead of returning a clean 401.
-  - /opt/litellm-venv/bin/pip install 'litellm[proxy]' prisma
-  - systemctl daemon-reload
-  - systemctl enable --now litellm
-  - /usr/local/bin/litellm-first-boot.sh

@@ -53,71 +53,34 @@ Companion plan docs live alongside the four earliest modules (`cpu-gemma-31b/` a
   cache, lock-file-pinned state, and `terraform.tfstate`/`.backup` were deliberately
   *not* copied from the original, since carrying over another module's state would
   make Terraform think this module already owns real, already-existing resources it
-  doesn't. Same cost profile as `cpu-qwen3-30b/` (~$12/day). **This module only**
-  also runs [LiteLLM](https://docs.litellm.ai/)'s proxy in front of the local
-  Ollama API, giving the model an OpenAI-compatible `/v1/...` surface - installed
-  into its own venv (`/opt/litellm-venv`, since Ubuntu 24.04 blocks system-wide
-  `pip install`) as a `litellm.service` systemd unit (`Requires=ollama.service`,
-  started only after `ollama-first-boot.sh` finishes so the proxy's first request
-  never races an unpulled model). Same private-only posture as Ollama: bound to
-  `127.0.0.1:4000`, no public firewall rule, its own SSH tunnel
-  (`litellm_tunnel_command` output). Don't add this to any other module without
-  being asked - it was scoped to `devaidrop/` specifically.
-  - **Auth**: `var.litellm_master_key` (required, no default, sensitive) is set as
-    `LITELLM_MASTER_KEY` in `litellm.service`'s environment. It's the required
-    `Authorization: Bearer <key>` on every `/v1/...` API call - fully working.
-    It does **not**, despite LiteLLM's own docs suggesting the master key can
-    substitute for `UI_PASSWORD`, make `/ui` admin login actually work here -
-    that additionally requires a connected database regardless of the key (see
-    the dedicated bullet on this below - it's a separate, deeper issue than
-    auth configuration). Initially deployed with no master key at all (open
-    API), which is why `terraform-ollama-qwen-coder`-style "no auth, private
-    network only" was the starting posture here too - added the master key
-    after the user asked for `/ui` access specifically.
-  - **Terraform template gotcha hit while adding this**: a `curl -w "%{http_code}"`
-    format string inside `cloud-init.yaml.tftpl` broke `templatefile()` - Terraform's
-    own template syntax also uses `%{ ... }` for control directives, so it tried to
-    parse `%{http_code}` as one and failed with "Invalid template control keyword".
-    Fixed by escaping it as `%%{http_code}` (Terraform's literal-percent escape).
-    Any future cloud-init edit that embeds a literal `%{...}`-shaped string (curl
-    format specifiers being the most likely case) needs this same escaping.
-  - **Incident**: the `devaidrop` droplet from the original LiteLLM setup was
-    destroyed (via `terraform destroy`, by the user, outside this conversation)
-    between verifying LiteLLM worked and adding the master key - discovered when a
-    live SSH fix attempt got "connection timed out" instead of the expected
-    "connection refused"; `GET /v2/droplets` confirmed zero droplets existed. The
-    master key ended up going straight into the Terraform config for the next
-    apply instead of a live SSH patch, since there was nothing left to SSH into.
-  - **`pip install 'litellm[proxy]'` alone is not enough**: without the `prisma`
-    package also installed, LiteLLM's *own* auth-error handler crashes with
-    `ModuleNotFoundError: No module named 'prisma'` on every failed-auth request
-    (`user_api_key_auth.py` → `_handle_authentication_error` → `_as_proxy_exception`
-    unconditionally does `import prisma` to check for DB errors, even with no
-    database configured at all). The practical symptom: any request with a
-    missing/invalid key - including the `/ui` login form itself - returns a raw
-    500 instead of a clean 401. Confirmed live on the recreated `devaidrop`
-    droplet: unauthenticated `curl /v1/models` 500'd until `pip install prisma`
-    was added; after that it correctly 401'd and `/ui` *loaded* normally. `runcmd`
-    now installs `'litellm[proxy]' prisma` together - keep them together in any
-    future LiteLLM setup, even without an actual database configured. **This
-    fixes the API's error-handling crash, but does NOT make `/ui` login work**
-    (see next point) - installing the `prisma` package is not the same as having
-    a connected database.
-  - **`/ui` login is a hard dead end without a real database - this is NOT
-    fixable by any master-key/env-var configuration**: LiteLLM's UI login
-    (`POST /v2/login` → `login_v2()` → `authenticate_user()` →
-    `user_update()`) unconditionally tries to look up/update a user record via
-    Prisma on *every* login attempt, master key correct or not. With no
-    `DATABASE_URL` configured, this raises `Exception: Not connected to DB!`
-    and the login POST returns `400` - confirmed live via
-    `journalctl -u litellm`. The `/v1/...` API endpoints (chat completions,
-    models list) do **not** hit this code path and work perfectly with just
-    `LITELLM_MASTER_KEY` set - only the browser dashboard login is blocked.
-    Presented this tradeoff to the user (add Postgres - either local on the
-    droplet or a separate DO Managed Database - vs. API-only); they chose
-    API-only, so `devaidrop/` intentionally has no database and `/ui` is
-    documented as non-functional rather than "fixed." If UI access is wanted
-    later, provisioning a database is a prerequisite, not a bug fix.
+  doesn't. Same cost profile as `cpu-qwen3-30b/` (~$12/day). Runs Ollama only -
+  no other service.
+  - **Public Ollama API - a deliberate exception to this repo's private-only
+    posture** (see the shared "Networking" bullet below): `OLLAMA_HOST` is
+    bound to `0.0.0.0:11434` (not `127.0.0.1`) and `network.tf`'s firewall has
+    an inbound rule allowing TCP 11434 from `0.0.0.0/0` - the API is reachable
+    by anyone, unauthenticated, no rate limiting. Requested explicitly by the
+    user ("for now") specifically for `devaidrop/`. `outputs.tf` exposes this
+    as `ollama_api_url`; `ssh_tunnel_command` still exists as an alternative
+    but is no longer required for access. Don't copy this pattern into any
+    other module without being asked again, and don't assume it's still
+    wanted if this file goes stale - confirm before treating it as permanent.
+  - **History**: this module previously also ran a [LiteLLM](https://docs.litellm.ai/)
+    proxy in front of Ollama (OpenAI-compatible `/v1/...` surface, its own venv,
+    `litellm.service` systemd unit, `/ui` admin dashboard). It was removed entirely
+    per explicit user request ("I only want it to run ollama and the llm model
+    already in the project") - `cloud-init.yaml.tftpl`, `droplet.tf`, `variables.tf`,
+    and `outputs.tf` no longer reference it, and it's back to matching
+    `cpu-qwen3-30b/`'s shape. Don't re-add it without being asked again. If it ever
+    does come back, several real gotchas were worked through in detail before
+    removal - not re-derived here, but check `git log -p` for this file/module
+    around 2026-09 if needed: a `curl -w "%{http_code}"` format string needing
+    `%%{http_code}` escaping inside `templatefile()`; `'litellm[proxy]' prisma`
+    needing to be installed together or failed-auth requests 500 instead of 401;
+    `/ui` login being a hard dead end without a real connected Postgres database
+    (master key alone is not enough); and, when using Supabase for that database,
+    its direct-connection host being IPv6-only on newer/free-tier projects,
+    requiring `ipv6 = true` on the droplet.
 - `cost_estimates.md` — derived 1-day cost comparison across the first four VM
   modules (the `project/` module has no cost - DO Projects are a free organizational
   feature; `cpu-gemma-31b/` and `devaidrop/` haven't been added to this comparison
@@ -156,6 +119,9 @@ so any one VM can be applied/destroyed without affecting the others:
   application: `OLLAMA_HOST` is bound to `127.0.0.1` inside the droplet, and access is
   only via SSH tunnel (`ssh -N -L 11434:localhost:11434 root@<ip>`). Preserve this
   private-only posture — don't add a public inbound rule for the Ollama port.
+  **`devaidrop/` is the sole, explicit exception** - see its own bullet above
+  for why and how; don't extend the exception to any other module without
+  being asked.
 - **Provisioning**: a single `digitalocean_droplet` with `user_data` rendered from a
   `cloud-init.yaml.tftpl` template (via `templatefile()`). Cloud-init installs Ollama,
   configures the systemd unit (model path, host binding, thread/context settings), and
@@ -330,3 +296,5 @@ the working tree. Treat such files as strictly off-limits — do not open them t
 variable. DigitalOcean credentials belong in the `DIGITALOCEAN_TOKEN` /
 `TF_VAR_do_token` shell environment or an untracked `terraform.tfvars`, never in a
 `.env`-named file that gets read into context.
+
+**Never read or write with `scratch` anywhere in its name**

@@ -14,17 +14,11 @@ output "ssh_command" {
 }
 
 output "ssh_tunnel_command" {
-  description = "SSH command to open a local tunnel to the private Ollama API."
+  description = "SSH command to open a local tunnel to the Ollama API. Not required for access (see ollama_api_url) since the API is also publicly reachable directly - kept as an alternative."
   value       = "ssh -N -L 11434:localhost:11434 root@${digitalocean_droplet.this.ipv4_address}"
 }
 
-output "litellm_tunnel_command" {
-  description = "SSH command to open a local tunnel to the private LiteLLM OpenAI-compatible proxy (fronts the same Ollama model). Once open, point any OpenAI-client-shaped tool at http://localhost:4000/v1."
-  value       = "ssh -N -L 4000:localhost:4000 root@${digitalocean_droplet.this.ipv4_address}"
-}
-
-output "litellm_master_key" {
-  description = "LiteLLM API master key. Required as \"Authorization: Bearer <this value>\" on every /v1/... API call. Does NOT work for /ui admin login - that requires a database this module doesn't provision (see README)."
-  value       = var.litellm_master_key
-  sensitive   = true
+output "ollama_api_url" {
+  description = "Public, unauthenticated URL of the Ollama API. Temporary exception to this repo's private-only posture - reachable by anyone, no auth in front of it."
+  value       = "http://${digitalocean_droplet.this.ipv4_address}:11434"
 }

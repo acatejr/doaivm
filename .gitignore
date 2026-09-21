@@ -20,3 +20,5 @@ override.tf.json
 
 .claude/
 __pycache__/
+*scratch*
+
